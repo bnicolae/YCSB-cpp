@@ -17,6 +17,9 @@
 #include <chrono>
 #include <iomanip>
 
+#include <signal.h>
+#include <boost/stacktrace.hpp>
+
 #include "utils.h"
 #include "timer.h"
 #include "client.h"
@@ -50,7 +53,15 @@ void StatusThread(ycsbc::Measurements *measurements, CountDownLatch *latch, int 
   };
 }
 
+static void backtrace_handler(int) {
+  std::cout << boost::stacktrace::stacktrace() << std::endl;
+  exit(1);
+}
+
 int main(const int argc, const char *argv[]) {
+  signal(SIGSEGV, backtrace_handler);
+  signal(SIGABRT, backtrace_handler);
+
   ycsbc::utils::Properties props;
   ParseCommandLine(argc, argv, props);
 
@@ -266,4 +277,3 @@ void UsageMessage(const char *command) {
 inline bool StrStartWith(const char *str, const char *pre) {
   return strncmp(str, pre, strlen(pre)) == 0;
 }
-

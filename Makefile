@@ -9,18 +9,21 @@
 
 #---------------------build config-------------------------
 
-DEBUG_BUILD ?= 0
-EXTRA_CXXFLAGS ?=
-EXTRA_LDFLAGS ?=
+DEPS_ROOT = $(HOME)/deploy
+
+DEBUG_BUILD ?= 1
+EXTRA_CXXFLAGS ?= -I$(DEPS_ROOT)/include
+EXTRA_LDFLAGS ?= -L$(DEPS_ROOT)/lib -ldl
 
 BIND_LEVELDB ?= 0
-BIND_ROCKSDB ?= 0
+BIND_ROCKSDB ?= 1
 BIND_LMDB ?= 0
+BIND_DATASTATES ?= 1
 
 #----------------------------------------------------------
 
 ifeq ($(DEBUG_BUILD), 1)
-	CXXFLAGS += -g
+	CXXFLAGS += -g -rdynamic
 else
 	CXXFLAGS += -O2
 	CPPFLAGS += -DNDEBUG
@@ -39,6 +42,12 @@ endif
 ifeq ($(BIND_LMDB), 1)
 	LDFLAGS += -llmdb
 	SOURCES += $(wildcard lmdb/*.cc)
+endif
+
+ifeq ($(BIND_DATASTATES), 1)
+	CXXFLAGS += -fopenmp
+	LDFLAGS += -lpmemobj
+	SOURCES += $(wildcard dstates/*.cc)
 endif
 
 CXXFLAGS += -std=c++17 -Wall -pthread $(EXTRA_CXXFLAGS) -I./

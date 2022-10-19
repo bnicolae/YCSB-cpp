@@ -5,7 +5,7 @@ This is a fork of [YCSB-C](https://github.com/basicthinker/YCSB-C) with followin
 
  * Make Zipf distribution and data value more similar to the original YCSB
  * Status and latency report during benchmark
- * Supported Databases: LevelDB, RocksDB, LMDB
+ * Supported Databases: LevelDB, RocksDB, LMDB, DataStates
 
 ## Building
 

@@ -11,16 +11,16 @@
 #include <mutex>
 
 #include "core/db.h"
-#include "core/properties.h"
+#include "utils/properties.h"
 
-#include "dstates/pskiplist.hpp"
+#include "dstates/vordered_kv.hpp"
 
 #define __DEBUG
 #include "dstates/debug.hpp"
 
 namespace ycsbc {
 
-typedef pskiplist_t<std::string, std::string> vordered_kv_t;
+typedef vordered_kv_t<std::string, std::string> dstates_kv_t;
 
 class DataStatesDB : public DB {
 public:
@@ -88,7 +88,7 @@ private:
 
     int fieldcount_;
 
-    static vordered_kv_t *db_;
+    static dstates_kv_t *db_;
     static int ref_cnt_;
     static std::mutex mu_;
 };

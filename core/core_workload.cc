@@ -4,9 +4,9 @@
 //
 //  Copyright (c) 2020 Youngjae Lee <ls4154.lee@gmail.com>.
 //  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
+//  Modifications Copyright 2023 Chengye YU <yuchengye2013 AT outlook.com>.
 //
 
-#include "utils.h"
 #include "uniform_generator.h"
 #include "zipfian_generator.h"
 #include "scrambled_zipfian_generator.h"
@@ -14,6 +14,7 @@
 #include "const_generator.h"
 #include "core_workload.h"
 #include "random_byte_generator.h"
+#include "utils/utils.h"
 
 #include <algorithm>
 #include <random>
@@ -28,7 +29,13 @@ const char *ycsbc::kOperationString[ycsbc::MAXOPTYPE] = {
   "UPDATE",
   "SCAN",
   "READMODIFYWRITE",
-  "DELETE"
+  "DELETE",
+  "INSERT-FAILED",
+  "READ-FAILED",
+  "UPDATE-FAILED",
+  "SCAN-FAILED",
+  "READMODIFYWRITE-FAILED",
+  "DELETE-FAILED"
 };
 
 const string CoreWorkload::TABLENAME_PROPERTY = "table";
@@ -90,6 +97,10 @@ const string CoreWorkload::OPERATION_COUNT_PROPERTY = "operationcount";
 
 const std::string CoreWorkload::FIELD_NAME_PREFIX = "fieldnameprefix";
 const std::string CoreWorkload::FIELD_NAME_PREFIX_DEFAULT = "field";
+
+const std::string CoreWorkload::ZIPFIAN_CONST_PROPERTY = "zipfian_const";
+
+namespace ycsbc {
 
 void CoreWorkload::Init(const utils::Properties &p) {
   table_name_ = p.GetProperty(TABLENAME_PROPERTY,TABLENAME_DEFAULT);
@@ -162,11 +173,14 @@ void CoreWorkload::Init(const utils::Properties &p) {
     // and pick another key.
     int op_count = std::stoi(p.GetProperty(OPERATION_COUNT_PROPERTY));
     int new_keys = (int)(op_count * insert_proportion * 2); // a fudge factor
-    key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys);
-
+    if (p.ContainsKey(ZIPFIAN_CONST_PROPERTY)) {
+      double zipfian_const = std::stod(p.GetProperty(ZIPFIAN_CONST_PROPERTY));
+      key_chooser_ = new ScrambledZipfianGenerator(0, record_count_ + new_keys - 1, zipfian_const);
+    } else {
+      key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys);
+    }
   } else if (request_dist == "latest") {
     key_chooser_ = new SkewedLatestGenerator(*transaction_insert_key_sequence_);
-
   } else {
     throw utils::Exception("Unknown request distribution: " + request_dist);
   }
@@ -230,3 +244,118 @@ void CoreWorkload::BuildSingleValue(std::vector<ycsbc::DB::Field> &values) {
   std::generate_n(std::back_inserter(field.value), len, [&]() { return byte_generator.Next(); } );
 }
 
+uint64_t CoreWorkload::NextTransactionKeyNum() {
+  uint64_t key_num;
+  do {
+    key_num = key_chooser_->Next();
+  } while (key_num > transaction_insert_key_sequence_->Last());
+  return key_num;
+}
+
+std::string CoreWorkload::NextFieldName() {
+  return std::string(field_prefix_).append(std::to_string(field_chooser_->Next()));
+}
+
+bool CoreWorkload::DoInsert(DB &db) {
+  const std::string key = BuildKeyName(insert_key_sequence_->Next());
+  std::vector<DB::Field> fields;
+  BuildValues(fields);
+  return db.Insert(table_name_, key, fields) == DB::kOK;
+}
+
+bool CoreWorkload::DoTransaction(DB &db) {
+  DB::Status status;
+  switch (op_chooser_.Next()) {
+    case READ:
+      status = TransactionRead(db);
+      break;
+    case UPDATE:
+      status = TransactionUpdate(db);
+      break;
+    case INSERT:
+      status = TransactionInsert(db);
+      break;
+    case SCAN:
+      status = TransactionScan(db);
+      break;
+    case READMODIFYWRITE:
+      status = TransactionReadModifyWrite(db);
+      break;
+    default:
+      throw utils::Exception("Operation request is not recognized!");
+  }
+  return (status == DB::kOK);
+}
+
+DB::Status CoreWorkload::TransactionRead(DB &db) {
+  uint64_t key_num = NextTransactionKeyNum();
+  const std::string key = BuildKeyName(key_num);
+  std::vector<DB::Field> result;
+  if (!read_all_fields()) {
+    std::vector<std::string> fields;
+    fields.push_back(NextFieldName());
+    return db.Read(table_name_, key, &fields, result);
+  } else {
+    return db.Read(table_name_, key, NULL, result);
+  }
+}
+
+DB::Status CoreWorkload::TransactionReadModifyWrite(DB &db) {
+  uint64_t key_num = NextTransactionKeyNum();
+  const std::string key = BuildKeyName(key_num);
+  std::vector<DB::Field> result;
+
+  if (!read_all_fields()) {
+    std::vector<std::string> fields;
+    fields.push_back(NextFieldName());
+    db.Read(table_name_, key, &fields, result);
+  } else {
+    db.Read(table_name_, key, NULL, result);
+  }
+
+  std::vector<DB::Field> values;
+  if (write_all_fields()) {
+    BuildValues(values);
+  } else {
+    BuildSingleValue(values);
+  }
+  return db.Update(table_name_, key, values);
+}
+
+DB::Status CoreWorkload::TransactionScan(DB &db) {
+  uint64_t key_num = NextTransactionKeyNum();
+  const std::string key = BuildKeyName(key_num);
+  int len = scan_len_chooser_->Next();
+  std::vector<std::vector<DB::Field>> result;
+  if (!read_all_fields()) {
+    std::vector<std::string> fields;
+    fields.push_back(NextFieldName());
+    return db.Scan(table_name_, key, len, &fields, result);
+  } else {
+    return db.Scan(table_name_, key, len, NULL, result);
+  }
+}
+
+DB::Status CoreWorkload::TransactionUpdate(DB &db) {
+  uint64_t key_num = NextTransactionKeyNum();
+  const std::string key = BuildKeyName(key_num);
+  std::vector<DB::Field> values;
+  if (write_all_fields()) {
+    BuildValues(values);
+  } else {
+    BuildSingleValue(values);
+  }
+  return db.Update(table_name_, key, values);
+}
+
+DB::Status CoreWorkload::TransactionInsert(DB &db) {
+  uint64_t key_num = transaction_insert_key_sequence_->Next();
+  const std::string key = BuildKeyName(key_num);
+  std::vector<DB::Field> values;
+  BuildValues(values);
+  DB::Status s = db.Insert(table_name_, key, values);
+  transaction_insert_key_sequence_->Acknowledge(key_num);
+  return s;
+}
+
+} // ycsbc

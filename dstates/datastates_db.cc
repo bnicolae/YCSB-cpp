@@ -9,8 +9,7 @@
 
 #include "core/core_workload.h"
 #include "core/db_factory.h"
-#include "core/properties.h"
-#include "core/utils.h"
+#include "utils/utils.h"
 
 namespace {
   const std::string PROP_NAME = "datastates.dbname";
@@ -25,7 +24,7 @@ namespace {
 
 namespace ycsbc {
 
-vordered_kv_t *DataStatesDB::db_ = nullptr;
+dstates_kv_t *DataStatesDB::db_ = nullptr;
 int DataStatesDB::ref_cnt_ = 0;
 std::mutex DataStatesDB::mu_;
 
@@ -57,7 +56,7 @@ void DataStatesDB::Init() {
 	DBG("deleting " << db_path);
 	unlink(db_path.c_str());
     }
-    db_ = new vordered_kv_t(db_path);
+    db_ = new dstates_kv_t(db_path);
 }
 
 void DataStatesDB::Cleanup() {
@@ -131,7 +130,7 @@ DB::Status DataStatesDB::ReadSingle(const std::string &table, const std::string 
                                  const std::vector<std::string> *fields,
                                  std::vector<Field> &result) {
     std::string data = db_->find(std::numeric_limits<int>::max(), key);
-    if (data == phistory_t<std::string>::low_marker)
+    if (data == dstates_kv_t::low_marker)
 	return kNotFound;
     if (fields != nullptr)
 	DeserializeRowFilter(result, data, *fields);
@@ -152,7 +151,7 @@ DB::Status DataStatesDB::ScanSingle(const std::string &table, const std::string 
 DB::Status DataStatesDB::UpdateSingle(const std::string &table, const std::string &key,
 				      std::vector<Field> &values) {
     std::string data = db_->find(std::numeric_limits<int>::max(), key);
-    if (data == phistory_t<std::string>::low_marker)
+    if (data == dstates_kv_t::low_marker)
 	return kNotFound;
     std::vector<Field> current_values;
     DeserializeRow(current_values, data);

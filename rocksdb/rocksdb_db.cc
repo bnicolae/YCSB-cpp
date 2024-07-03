@@ -3,14 +3,14 @@
 //  YCSB-cpp
 //
 //  Copyright (c) 2020 Youngjae Lee <ls4154.lee@gmail.com>.
+//  Modifications Copyright 2023 Chengye YU <yuchengye2013 AT outlook.com>.
 //
 
 #include "rocksdb_db.h"
 
 #include "core/core_workload.h"
 #include "core/db_factory.h"
-#include "core/properties.h"
-#include "core/utils.h"
+#include "utils/utils.h"
 
 #include <rocksdb/cache.h>
 #include <rocksdb/filter_policy.h>
@@ -106,11 +106,14 @@ namespace {
 
   static std::shared_ptr<rocksdb::Env> env_guard;
   static std::shared_ptr<rocksdb::Cache> block_cache;
+#if ROCKSDB_MAJOR < 8
   static std::shared_ptr<rocksdb::Cache> block_cache_compressed;
+#endif
 } // anonymous
 
 namespace ycsbc {
 
+std::vector<rocksdb::ColumnFamilyHandle *> RocksdbDB::cf_handles_;
 rocksdb::DB *RocksdbDB::db_ = nullptr;
 int RocksdbDB::ref_cnt_ = 0;
 std::mutex RocksdbDB::mu_;
@@ -193,7 +196,6 @@ void RocksdbDB::Init() {
   rocksdb::Options opt;
   opt.create_if_missing = true;
   std::vector<rocksdb::ColumnFamilyDescriptor> cf_descs;
-  std::vector<rocksdb::ColumnFamilyHandle *> cf_handles;
   GetOptions(props, &opt, &cf_descs);
 #ifdef USE_MERGEUPDATE
   opt.merge_operator.reset(new YCSBUpdateMerge);
@@ -209,17 +211,23 @@ void RocksdbDB::Init() {
   if (cf_descs.empty()) {
     s = rocksdb::DB::Open(opt, db_path, &db_);
   } else {
-    s = rocksdb::DB::Open(opt, db_path, cf_descs, &cf_handles, &db_);
+    s = rocksdb::DB::Open(opt, db_path, cf_descs, &cf_handles_, &db_);
   }
   if (!s.ok()) {
     throw utils::Exception(std::string("RocksDB Open: ") + s.ToString());
   }
 }
 
-void RocksdbDB::Cleanup() {
+void RocksdbDB::Cleanup() { 
   const std::lock_guard<std::mutex> lock(mu_);
   if (--ref_cnt_) {
     return;
+  }
+  for (size_t i = 0; i < cf_handles_.size(); i++) {
+    if (cf_handles_[i] != nullptr) {
+      delete cf_handles_[i];
+      cf_handles_[i] = nullptr;
+    }
   }
   delete db_;
 }
@@ -240,7 +248,11 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
 
   const std::string options_file = props.GetProperty(PROP_OPTIONS_FILE, PROP_OPTIONS_FILE_DEFAULT);
   if (options_file != "") {
-    rocksdb::Status s = rocksdb::LoadOptionsFromFile(options_file, env, opt, cf_descs);
+    rocksdb::ConfigOptions config_options;
+    config_options.ignore_unknown_options = false;
+    config_options.input_strings_escaped = true;
+    config_options.env = env;
+    rocksdb::Status s = rocksdb::LoadOptionsFromFile(config_options, options_file, opt, cf_descs);
     if (!s.ok()) {
       throw utils::Exception(std::string("RocksDB LoadOptionsFromFile: ") + s.ToString());
     }
@@ -332,12 +344,14 @@ void RocksdbDB::GetOptions(const utils::Properties &props, rocksdb::Options *opt
       block_cache = rocksdb::NewLRUCache(cache_size);
       table_options.block_cache = block_cache;
     }
+#if ROCKSDB_MAJOR < 8
     size_t compressed_cache_size = std::stoul(props.GetProperty(PROP_COMPRESSED_CACHE_SIZE,
                                                                 PROP_COMPRESSED_CACHE_SIZE_DEFAULT));
     if (compressed_cache_size > 0) {
-      block_cache_compressed = rocksdb::NewLRUCache(cache_size);
-      table_options.block_cache_compressed = rocksdb::NewLRUCache(compressed_cache_size);
+      block_cache_compressed = rocksdb::NewLRUCache(compressed_cache_size);
+      table_options.block_cache_compressed = block_cache_compressed;
     }
+#endif
     int bloom_bits = std::stoul(props.GetProperty(PROP_BLOOM_BITS, PROP_BLOOM_BITS_DEFAULT));
     if (bloom_bits > 0) {
       table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(bloom_bits));
@@ -466,7 +480,7 @@ DB::Status RocksdbDB::UpdateSingle(const std::string &table, const std::string &
   DeserializeRow(current_values, data);
   assert(current_values.size() == static_cast<size_t>(fieldcount_));
   for (Field &new_field : values) {
-    bool found __attribute__((unused)) = false;
+    bool found MAYBE_UNUSED = false;
     for (Field &cur_field : current_values) {
       if (cur_field.name == new_field.name) {
         found = true;

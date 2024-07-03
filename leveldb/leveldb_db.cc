@@ -3,13 +3,13 @@
 //  YCSB-cpp
 //
 //  Copyright (c) 2020 Youngjae Lee <ls4154.lee@gmail.com>.
+//  Modifications Copyright 2023 Chengye YU <yuchengye2013 AT outlook.com>.
 //
 
 #include "leveldb_db.h"
-#include "core/properties.h"
-#include "core/utils.h"
 #include "core/core_workload.h"
 #include "core/db_factory.h"
+#include "utils/utils.h"
 
 #include <leveldb/options.h>
 #include <leveldb/write_batch.h>
@@ -298,7 +298,7 @@ DB::Status LeveldbDB::UpdateSingleEntry(const std::string &table, const std::str
   std::vector<Field> current_values;
   DeserializeRow(&current_values, data);
   for (Field &new_field : values) {
-    bool found __attribute__((unused)) = false;
+    bool found MAYBE_UNUSED = false;
     for (Field &cur_field : current_values) {
       if (cur_field.name == new_field.name) {
         found = true;

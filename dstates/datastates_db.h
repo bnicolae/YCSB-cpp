@@ -20,7 +20,7 @@
 
 namespace ycsbc {
 
-typedef vordered_kv_t<std::string, std::string> dstates_kv_t;
+typedef vordered_kv_t<std::string, std::string, true> dstates_kv_t;
 
 class DataStatesDB : public DB {
 public:

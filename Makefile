@@ -34,7 +34,7 @@ BUILD_HDRHISTOGRAM ?= 1
 #----------------------------------------------------------
 
 ifeq ($(DEBUG_BUILD), 1)
-	CXXFLAGS += -g -rdynamic
+	CXXFLAGS += -O2 -g -rdynamic
 else
 	CXXFLAGS += -O2
 	CPPFLAGS += -DNDEBUG
@@ -71,8 +71,8 @@ ifeq ($(BIND_SQLITE), 1)
 	SOURCES += $(wildcard sqlite/*.cc)
 endif
 
-CXXFLAGS += -std=c++17 -Wall -pthread $(EXTRA_CXXFLAGS) -I./
-LDFLAGS += $(EXTRA_LDFLAGS) -lpthread
+CXXFLAGS += -std=c++23 -Wall -pthread $(EXTRA_CXXFLAGS) -I./
+LDFLAGS += $(EXTRA_LDFLAGS) -lpthread -lstdc++exp
 SOURCES += $(wildcard core/*.cc)
 OBJECTS += $(SOURCES:.cc=.o)
 DEPS += $(SOURCES:.cc=.d)

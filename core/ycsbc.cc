@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <ctime>
+#include <csignal>
 
 #include <string>
 #include <iostream>
@@ -16,9 +17,7 @@
 #include <future>
 #include <chrono>
 #include <iomanip>
-
-#include <signal.h>
-#include <boost/stacktrace.hpp>
+#include <stacktrace>
 
 #include "client.h"
 #include "core_workload.h"
@@ -89,7 +88,7 @@ void RateLimitThread(std::string rate_file, std::vector<ycsbc::utils::RateLimite
 }
 
 static void backtrace_handler(int) {
-  std::cout << boost::stacktrace::stacktrace() << std::endl;
+  std::cout << std::stacktrace::current(0, 64) << std::endl;
   exit(1);
 }
 

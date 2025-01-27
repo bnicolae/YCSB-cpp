@@ -2,7 +2,7 @@
 //  rocksdb_db.cc
 //  YCSB-cpp
 //
-//  Copyright (c) 2022 Bogdan Nicolae <bogdan.nicolae@acm.org>
+//  Copyright (c) 2022-2025 Bogdan Nicolae <bogdan.nicolae@acm.org>
 //
 
 #include "datastates_db.h"
@@ -12,14 +12,17 @@
 #include "utils/utils.h"
 
 namespace {
-  const std::string PROP_NAME = "datastates.dbname";
-  const std::string PROP_NAME_DEFAULT = "";
+    const std::string PROP_NAME = "datastates.dbname";
+    const std::string PROP_NAME_DEFAULT = "";
 
-  const std::string PROP_MERGEUPDATE = "datastates.mergeupdate";
-  const std::string PROP_MERGEUPDATE_DEFAULT = "false";
+    const std::string PROP_MERGEUPDATE = "datastates.mergeupdate";
+    const std::string PROP_MERGEUPDATE_DEFAULT = "false";
 
-  const std::string PROP_DESTROY = "datastates.destroy";
-  const std::string PROP_DESTROY_DEFAULT = "false";
+    const std::string PROP_DESTROY = "datastates.destroy";
+    const std::string PROP_DESTROY_DEFAULT = "false";
+
+    const std::string PROP_SIZE = "datastates.size";
+    const std::string PROP_SIZE_DEFAULT = "1073741824";
 } // anonymous
 
 namespace ycsbc {
@@ -51,12 +54,16 @@ void DataStatesDB::Init() {
     const std::string &db_path = props.GetProperty(PROP_NAME, PROP_NAME_DEFAULT);
     if (db_path == "")
 	throw utils::Exception("DataStates db path is missing");
+    size_t db_size;
+    const std::string &db_size_str = props.GetProperty(PROP_NAME, PROP_NAME_DEFAULT);
+    if (sscanf(db_size_str.c_str(), "%zu", &db_size) != 1)
+	throw utils::Exception("DataStates db size is invalid");
 
     if (props.GetProperty(PROP_DESTROY, PROP_DESTROY_DEFAULT) == "true") {
 	DBG("deleting " << db_path);
 	unlink(db_path.c_str());
     }
-    db_ = new dstates_kv_t(db_path);
+    db_ = new dstates_kv_t(db_path, db_size);
 }
 
 void DataStatesDB::Cleanup() {
